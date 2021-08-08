@@ -36,6 +36,8 @@ def main():
     weapon_patch = read_patch(wad_path, *info_table['SPRITE']['PISGA0'])
 
     weapon_surf = patch_to_surface(weapon_patch, current_color_palette)
+    weapon_surf = transform.scale2x(weapon_surf)
+    weapon_rect = weapon_surf.get_rect(bottom=h, centerx=w//2)
 
     running = True
     while running:
@@ -44,7 +46,7 @@ def main():
                 running = False
     
         screen.fill('white')
-        screen.blit(transform.scale(weapon_surf, (weapon_surf.get_width()*4, weapon_surf.get_height()*4)), (200,0))
+        screen.blit(weapon_surf, weapon_rect)
         display.update()
         clock.tick(60)
         display.set_caption('doom-py %0.1f fps' % clock.get_fps())
