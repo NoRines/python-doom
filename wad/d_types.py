@@ -59,7 +59,7 @@ class Sector(NamedTuple):
         return len(self.lines)
 
 
-class PatchColumn(NamedTuple):
+class PatchPost(NamedTuple):
     top_delta : int
     length : int
     data : bytes
@@ -69,4 +69,16 @@ class Patch(NamedTuple):
     height : int
     left_offset : int
     top_offset : int
-    columns : List[PatchColumn]
+    columns : List[PatchPost]
+
+class PatchLayout(NamedTuple):
+    orginx : int
+    orginy : int
+    p_number : int
+
+class Texture(NamedTuple):
+    name : str
+    width : int
+    height : int
+    n_patches : int
+    layouts : List[PatchLayout]

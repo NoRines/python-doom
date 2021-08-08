@@ -1,11 +1,10 @@
 from os import read
-from typing import List, Tuple
 import pygame
 from pygame import PixelArray, Surface, display, event, time, transform
 from pygame.constants import QUIT
 
 from wad.d_types import Patch
-from wad.reader import read_wad_info_table, read_playpal, read_patch, Palette
+from wad.reader import read_patch_names, read_wad_info_table, read_playpal, read_patch, read_textures, Palette
 
 def patch_to_surface(patch : Patch, palette : Palette) -> Surface:
     surf = Surface((patch.width, patch.height)).convert_alpha()
@@ -30,6 +29,8 @@ def main():
     wad_path = 'wads/DOOM.WAD'
     info_table = read_wad_info_table(wad_path)
     playpal = read_playpal(wad_path, *info_table['PLAYPAL'])
+    tex_dict = read_textures(wad_path, *info_table['TEXTURE1'])
+    patch_names = read_patch_names(wad_path, *info_table['PNAMES'])
 
     current_color_palette = playpal[0]
 

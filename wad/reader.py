@@ -1,12 +1,10 @@
 import re
 import math
 from typing import Dict, List, Tuple
-import os
 
-from pygame import Rect
-from pygame.math import Vector2
+from pygame import Rect, Vector2
 
-from wad.d_types import Thing, LineDef, SideDef, Seg, SubSector, Node, Sector, PatchColumn, Patch
+from wad.d_types import Thing, LineDef, SideDef, Seg, SubSector, Node, Sector, PatchPost, Patch, PatchLayout, Texture
 
 def _bytes_to_int(b : bytes, signed=False) -> int:
     return int.from_bytes(b, 'little', signed=signed)
@@ -277,7 +275,43 @@ def read_patch(wad_path : str, file_pos : int, size : int) -> Patch:
                 f.read(1)
                 data = f.read(length)
                 f.read(1)
-                patch_col = PatchColumn(top_delta, length, data)
+                patch_col = PatchPost(top_delta, length, data)
                 patch.columns.append(patch_col)
 
         return patch
+
+def read_patch_names(wad_path : str, file_pos : int, size : int) -> List[str]:
+    res_data : List[str] = []
+    with open(wad_path, 'rb') as f:
+        f.seek(file_pos)
+        n_patches = _bytes_to_int(f.read(4))
+        for _ in range(n_patches):
+            res_data.append(_bytes_to_str(f.read(8)))
+    return res_data
+
+def read_textures(wad_path : str, file_pos : int, size : int) -> Dict[str, Texture]:
+    res_dict : Dict[str, Texture] = {}
+    with open(wad_path, 'rb') as f:
+        f.seek(file_pos)
+        n_textures = _bytes_to_int(f.read(4))
+        texture_offsets = [_bytes_to_int(f.read(4)) for _ in range(n_textures)]
+
+        for i, offset in enumerate(texture_offsets):
+            f.seek(file_pos + offset)
+            name = _bytes_to_str(f.read(8))
+            f.read(4)
+            width = _bytes_to_int(f.read(2))
+            height = _bytes_to_int(f.read(2))
+            f.read(4)
+            n_patches = _bytes_to_int(f.read(2))
+
+            texture = Texture(name, width, height, n_patches, [])
+            for i in range(n_patches):
+                orginx = _bytes_to_int(f.read(2), signed=True)
+                orginy = _bytes_to_int(f.read(2), signed=True)
+                p_num = _bytes_to_int(f.read(2), signed=True)
+                f.read(4)
+                layout = PatchLayout(orginx, orginy, p_num)
+                texture.layouts.append(layout)
+            res_dict[name] = texture
+    return res_dict
