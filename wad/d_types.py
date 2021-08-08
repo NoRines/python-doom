@@ -58,9 +58,15 @@ class Sector(NamedTuple):
     def linecount(self):
         return len(self.lines)
 
+
+class PatchColumn(NamedTuple):
+    top_delta : int
+    length : int
+    data : bytes
+    
 class Patch(NamedTuple):
     width : int
     height : int
     left_offset : int
     top_offset : int
-    data : List[bytes]
+    columns : List[PatchColumn]

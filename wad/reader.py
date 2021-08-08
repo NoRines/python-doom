@@ -6,7 +6,7 @@ import os
 from pygame import Rect
 from pygame.math import Vector2
 
-from d_types import Thing, LineDef, SideDef, Seg, SubSector, Node, Sector, Patch
+from wad.d_types import Thing, LineDef, SideDef, Seg, SubSector, Node, Sector, PatchColumn, Patch
 
 def _bytes_to_int(b : bytes, signed=False) -> int:
     return int.from_bytes(b, 'little', signed=signed)
@@ -239,8 +239,9 @@ def add_linedefs_to_sector(sector : Sector, sector_id : int, linedefs : List[Lin
            (back_sidedef != -1 and sidedefs[back_sidedef].sector == sector_id):
            sector.lines.append(i)
 
-Color = Tuple[int, int, int]
-def read_playpal(wad_path : str, file_pos : int, size : int) -> List[List[Color]]:
+Color = Tuple[int, int, int, int]
+Palette = List[Color]
+def read_playpal(wad_path : str, file_pos : int, size : int) -> List[Palette]:
     n_bytes = 256 * 3
     palettes = []
     with open(wad_path, 'rb') as f:
@@ -251,30 +252,32 @@ def read_playpal(wad_path : str, file_pos : int, size : int) -> List[List[Color]
 
             palettes.append([])
             for i in range(0, n_bytes, 3):
-                palettes[-1].append((int(palette_bytes[i + 0]), int(palette_bytes[i + 1]), int(palette_bytes[i + 2])))
+                palettes[-1].append((int(palette_bytes[i + 0]), int(palette_bytes[i + 1]), int(palette_bytes[i + 2]), 255))
     return palettes
 
 def read_patch(wad_path : str, file_pos : int, size : int) -> Patch:
     with open(wad_path, 'rb') as f:
         f.seek(file_pos)
+        start_pos = f.tell()
+
         width = _bytes_to_int(f.read(2))
         height = _bytes_to_int(f.read(2))
         left_offset = _bytes_to_int(f.read(2), signed=True)
         top_offset = _bytes_to_int(f.read(2), signed=True)
 
-        patch = Patch(width, height, left_offset, top_offset, [])
+        columnofs = [_bytes_to_int(f.read(4)) for _ in range(width)]
 
-        column_offset_data = f.read(4 * width)
-        column_offset = [_bytes_to_int(column_offset_data[i*4:(i+1)*4]) for i in range(width)]
-        f.seek(-(width * 4 + 8), os.SEEK_CUR)
-        for offset in column_offset:
-            f.seek(offset, os.SEEK_CUR)
-            bytes_from_start = offset + 3
-            top_delta = _bytes_to_int(f.read(1))
-            length = _bytes_to_int(f.read(1))
-            bytes_from_start += length
-            f.read(1)
-            data = f.read(length)
-            f.seek(-bytes_from_start, os.SEEK_CUR)
-            patch.data.append(data)
+        patch = Patch(width, height, left_offset, top_offset, [])
+        for offset in columnofs:
+            f.seek(start_pos + offset)
+            top_delta = 0
+            while top_delta != 0xFF:
+                top_delta = _bytes_to_int(f.read(1))
+                length = _bytes_to_int(f.read(1))
+                f.read(1)
+                data = f.read(length)
+                f.read(1)
+                patch_col = PatchColumn(top_delta, length, data)
+                patch.columns.append(patch_col)
+
         return patch
