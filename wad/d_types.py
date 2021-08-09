@@ -76,7 +76,7 @@ class PatchLayout(NamedTuple):
     orginy : int
     p_number : int
 
-class Texture(NamedTuple):
+class WadTexture(NamedTuple):
     name : str
     width : int
     height : int

@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple
 
 from pygame import Rect, Vector2
 
-from wad.d_types import Thing, LineDef, SideDef, Seg, SubSector, Node, Sector, PatchPost, Patch, PatchLayout, Texture
+from wad.d_types import Thing, LineDef, SideDef, Seg, SubSector, Node, Sector, PatchPost, Patch, PatchLayout, WadTexture
 
 def _bytes_to_int(b : bytes, signed=False) -> int:
     return int.from_bytes(b, 'little', signed=signed)
@@ -289,8 +289,8 @@ def read_patch_names(wad_path : str, file_pos : int, size : int) -> List[str]:
             res_data.append(_bytes_to_str(f.read(8)))
     return res_data
 
-def read_textures(wad_path : str, file_pos : int, size : int) -> Dict[str, Texture]:
-    res_dict : Dict[str, Texture] = {}
+def read_textures(wad_path : str, file_pos : int, size : int) -> Dict[str, WadTexture]:
+    res_dict : Dict[str, WadTexture] = {}
     with open(wad_path, 'rb') as f:
         f.seek(file_pos)
         n_textures = _bytes_to_int(f.read(4))
@@ -305,7 +305,7 @@ def read_textures(wad_path : str, file_pos : int, size : int) -> Dict[str, Textu
             f.read(4)
             n_patches = _bytes_to_int(f.read(2))
 
-            texture = Texture(name, width, height, n_patches, [])
+            texture = WadTexture(name, width, height, n_patches, [])
             for i in range(n_patches):
                 orginx = _bytes_to_int(f.read(2), signed=True)
                 orginy = _bytes_to_int(f.read(2), signed=True)
