@@ -286,7 +286,7 @@ def read_patch_names(wad_path : str, file_pos : int, size : int) -> List[str]:
         f.seek(file_pos)
         n_patches = _bytes_to_int(f.read(4))
         for _ in range(n_patches):
-            res_data.append(_bytes_to_str(f.read(8)))
+            res_data.append(_bytes_to_str(f.read(8)).upper())
     return res_data
 
 def read_textures(wad_path : str, file_pos : int, size : int) -> Dict[str, WadTexture]:
