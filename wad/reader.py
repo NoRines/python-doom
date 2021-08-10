@@ -1,10 +1,12 @@
 import re
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from pygame import Rect, Vector2
 
-from wad.d_types import Thing, LineDef, SideDef, Seg, SubSector, Node, Sector, PatchPost, Patch, PatchLayout, WadTexture
+from wad.d_types import Thing, LineDef, SideDef, Seg, \
+    SubSector, Node, Sector, PatchPost, Patch, \
+    PatchLayout, WadTexture, ColorPalette
 
 def _bytes_to_int(b : bytes, signed=False) -> int:
     return int.from_bytes(b, 'little', signed=signed)
@@ -237,9 +239,7 @@ def add_linedefs_to_sector(sector : Sector, sector_id : int, linedefs : List[Lin
            (back_sidedef != -1 and sidedefs[back_sidedef].sector == sector_id):
            sector.lines.append(i)
 
-Color = Tuple[int, int, int, int]
-Palette = List[Color]
-def read_playpal(wad_path : str, file_pos : int, size : int) -> List[Palette]:
+def read_playpal(wad_path : str, file_pos : int, size : int) -> List[ColorPalette]:
     n_bytes = 256 * 3
     palettes = []
     with open(wad_path, 'rb') as f:

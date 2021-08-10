@@ -1,5 +1,9 @@
-from typing import NamedTuple, List
+from typing import NamedTuple, List, Tuple
 from pygame import Rect, Vector2
+
+
+Color = Tuple[int, int, int, int]
+ColorPalette = List[Color]
 
 class Thing(NamedTuple):
     position : Vector2
