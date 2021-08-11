@@ -231,14 +231,6 @@ def read_sectors(wad_path : str, file_pos : int, size : int) -> List[Sector]:
             sectors.append(sector)
     return sectors
 
-def add_linedefs_to_sector(sector : Sector, sector_id : int, linedefs : List[LineDef], sidedefs : List[SideDef]):
-    for i, linedef in enumerate(linedefs):
-        front_sidedef = linedef.front_sidedef
-        back_sidedef = linedef.back_sidedef
-        if (front_sidedef != -1 and sidedefs[front_sidedef].sector == sector_id) or \
-           (back_sidedef != -1 and sidedefs[back_sidedef].sector == sector_id):
-           sector.lines.append(i)
-
 def read_playpal(wad_path : str, file_pos : int, size : int) -> List[ColorPalette]:
     n_bytes = 256 * 3
     palettes = []
