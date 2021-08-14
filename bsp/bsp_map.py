@@ -17,11 +17,11 @@ from utils.pic_utils import patch_to_surface
 from utils.math_utils import line_intersection
 
 RES_WIDTH = 320
-RES_HEIGHT = 240
+RES_HEIGHT = 200
 
 WALL_HEIGHT_SCALE = 0.4
 
-HEAD_POS = 20
+HEAD_POS = 120 * 2
 
 FOV : float = math.radians(90)
 TAN_HALF_FOV = math.tan(FOV / 2)
@@ -30,8 +30,6 @@ VIEW_POS = Vector2(0,0)
 VIEW_DIR = Vector2(1,0)
 VIEW_LEFT_FRUST = VIEW_DIR.rotate_rad(-FOV / 2)
 VIEW_RIGHT_FRUST = VIEW_DIR.rotate_rad(FOV / 2)
-#VIEW_LEFT_FRUST = VIEW_DIR.rotate_rad(FOV / 2)
-#VIEW_RIGHT_FRUST = VIEW_DIR.rotate_rad(-FOV / 2)
 VIEW_LEFT_FRUST_NORM = Vector2(-VIEW_LEFT_FRUST.y, VIEW_LEFT_FRUST.x)
 VIEW_RIGHT_FRUST_NORM = Vector2(VIEW_RIGHT_FRUST.y, -VIEW_RIGHT_FRUST.x)
 
@@ -46,6 +44,8 @@ sectors  : List[Sector]    = []
 
 wall_textures : Dict[str, Surface] = {}
 
+top_bound : List[int] = [0] * RES_WIDTH
+bottom_bound : List[int] = [RES_HEIGHT] * RES_WIDTH
 
 def _classify_point_to_view(pos : Vector2, dir : Vector2, left_norm : Vector2, right_norm : Vector2, p : Vector2) -> int:
     a = int((pos - p).dot(left_norm) < 0)
@@ -127,7 +127,7 @@ def _is_backface(p : Vector2, angle : float, pos : Vector2) -> bool:
 
 
 
-def test_render_seg(seg_index : int, pos : Vector2, angle : float):
+def test_render_seg(seg_index : int, pos : Vector2, angle : float, bla = False):
     render_list : List[Tuple[Tuple[int, int], Surface]] = []
 
     seg = segs[seg_index]
@@ -135,6 +135,8 @@ def test_render_seg(seg_index : int, pos : Vector2, angle : float):
     v1 = vertexes[seg.end_vert]
 
     if _is_backface(v0, seg.angle, pos):
+        if bla:
+            print('sldghslghk')
         return render_list
 
     linedef = linedefs[seg.linedef]
@@ -208,26 +210,39 @@ def test_render_seg(seg_index : int, pos : Vector2, angle : float):
             wall_height = ceiling_h - floor_h
 
             for i in range(first_col, last_col):
-                tex_x = sidedef.x_offset + int(u_left / one_over_z0)
-                if tex_height >= wall_height:
-                    ss = texture.subsurface((tex_x % texture.get_width(), sidedef.y_offset, 1, wall_height))
-                    ss = transform.scale(ss, (1, int(y_bottom) - int(y_top)))
-                    render_list.append(((i, int(y_top)), ss))
-                else:
-                    surf = Surface((1, wall_height)).convert_alpha()
-                    ss = texture.subsurface((tex_x % texture.get_width(), sidedef.y_offset, 1, texture.get_height() - sidedef.y_offset))
-                    surf.blit(ss, (0, 0))
-                    y = (texture.get_height() - sidedef.y_offset)
-                    pix_left = wall_height - (texture.get_height() - sidedef.y_offset)
-                    while pix_left > texture.get_height():
-                        ss = texture.subsurface((tex_x % texture.get_width(), 0, 1, texture.get_height()))
-                        surf.blit(ss, (0, y))
-                        y += texture.get_height()
-                        pix_left -= texture.get_height()
-                    ss = texture.subsurface((tex_x % texture.get_width(), 0, 1, pix_left))
-                    surf.blit(ss, (0, y))
-                    surf = transform.scale(surf, (1, int(y_bottom) - int(y_top)))
-                    render_list.append(((i, int(y_top)), surf))
+                if y_top < RES_HEIGHT and y_bottom >= 0 and int(y_bottom) != int(y_top):
+                    tex_x = sidedef.x_offset + int(u_left / one_over_z0)
+                    if tex_height >= wall_height:
+                        top = max(int(y_top), top_bound[i])
+                        bottom = min(int(y_bottom), bottom_bound[i])
+                        col_height = int(y_bottom - y_top)
+                        y_offset = int(((top - int(y_top)) / col_height) * wall_height)
+                        off_screen = int(((int(y_bottom) - bottom) / col_height) * wall_height)
+
+                        ss = texture.subsurface((tex_x % texture.get_width(), y_offset + sidedef.y_offset, 1, wall_height - (y_offset + off_screen)))
+                        ss = transform.scale(ss, (1, bottom - top))
+                        render_list.append(((i, top), ss))
+                    else:
+                        top = max(int(y_top), top_bound[i])
+                        bottom = min(int(y_bottom), bottom_bound[i])
+                        col_height = int(y_bottom - y_top)
+                        y_offset = int(((top - int(y_top)) / col_height) * wall_height)
+                        off_screen = int(((int(y_bottom) - bottom) / col_height) * wall_height)
+
+                        surf = Surface((1, wall_height - (y_offset + off_screen))).convert_alpha()
+                        rect = (tex_x % texture.get_width(), (sidedef.y_offset + y_offset), 1, texture.get_height() - (sidedef.y_offset + y_offset))
+                        surf.blit(texture, (0,0), rect)
+                        y = (texture.get_height() - (sidedef.y_offset + y_offset))
+                        pix_left = wall_height - (texture.get_height() - (sidedef.y_offset + y_offset))
+                        while pix_left > texture.get_height():
+                            rect = (tex_x % texture.get_width(), 0, 1, texture.get_height())
+                            surf.blit(texture, (0,y), rect)
+                            y += texture.get_height()
+                            pix_left -= texture.get_height()
+                        rect = (tex_x % texture.get_width(), 0, 1, pix_left - off_screen)
+                        surf.blit(texture, (0,y), rect)
+                        surf = transform.scale(surf, (1, bottom - top))
+                        render_list.append(((i, top), surf))
 
                 y_top += y_step_top
                 y_bottom += y_step_bottom

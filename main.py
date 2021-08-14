@@ -53,7 +53,7 @@ def main():
 
     one_seg_mode = False
 
-    seg_index = 241
+    seg_index = 375
     running = True
     while running:
         for e in event.get():
@@ -68,15 +68,15 @@ def main():
 
         player.update(key.get_pressed())
     
-        screen.fill('white')
+        screen.fill('white', (0,0,640,400))
         #screen.blit(wall_textures['STARTAN3'], (0,0))
         if not one_seg_mode:
             render_list = []
             for i in range(747):
                 render_list += test_render_seg(i, player.pos, player.angle)
         else:
-            render_list = test_render_seg(seg_index, player.pos, player.angle)
-            temp_bla_func(seg_index)
+            render_list = test_render_seg(seg_index, player.pos, player.angle, True)
+            #temp_bla_func(seg_index)
         for pos, ss in render_list:
             #screen.blit(ss, pos)
             screen.blit(transform.scale2x(ss), (pos[0]*2, pos[1]*2))
