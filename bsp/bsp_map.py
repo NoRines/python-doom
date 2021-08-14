@@ -1,8 +1,7 @@
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 from pygame import Vector2, Surface, transform, Rect
-from pygame.version import ver
 
 from wad.d_types import ColorPalette, LineDef, SideDef, Seg, SubSector, \
     Node, Sector, WadTexture
@@ -13,15 +12,17 @@ from wad.reader import read_linedefs, read_vertexes, \
     read_sidedefs, read_segs, read_ssectors, read_nodes, \
     read_sectors
 
+from bsp.wall_clip import ScreenCoords, clear_clip_range, clip_solid_wall
+
 from utils.pic_utils import patch_to_surface
 from utils.math_utils import line_intersection
 
-RES_WIDTH = 320
-RES_HEIGHT = 200
+from entities.player import Player
+from utils.defs import RES_WIDTH, RES_HEIGHT
 
-WALL_HEIGHT_SCALE = 0.4
+WALL_HEIGHT_SCALE = 1.0
 
-HEAD_POS = 120 * 2
+HEAD_POS = 41
 
 FOV : float = math.radians(90)
 TAN_HALF_FOV = math.tan(FOV / 2)
@@ -126,151 +127,179 @@ def _is_backface(p : Vector2, angle : float, pos : Vector2) -> bool:
     return (dist_vec.normalize()).dot(seg_normal) < 0
 
 
+ScreenColumn = Tuple[Tuple[int, int], Surface]
 
-def test_render_seg(seg_index : int, pos : Vector2, angle : float, bla = False):
-    render_list : List[Tuple[Tuple[int, int], Surface]] = []
 
-    seg = segs[seg_index]
+
+def _screen_coord_to_screen_cols(sc:ScreenCoords, sidedef:SideDef) -> List[ScreenColumn]:
+    global top_bound, bottom_bound
+    #v0, v1, first_col, last_col, h_top_start, h_top_end, h_bottom_start, h_bottom_end, u_left, u_right, wall_height = screen_coords
+
+    texture = wall_textures[sidedef.middle_texture_name]
+    tex_height = texture.get_height() - sidedef.y_offset
+    render_list : List[ScreenColumn] = []
+
+    y_top = sc.h_top_start
+    y_bottom = sc.h_bottom_start
+    u = sc.u_left
+    one_over_z = sc.one_over_z0
+
+    for i in range(sc.first_col, sc.last_col):
+        if y_top < RES_HEIGHT and y_bottom >= 0 and int(y_bottom) != int(y_top):
+            top = max(int(y_top), top_bound[i])
+            bottom = min(int(y_bottom), bottom_bound[i])
+            col_height = int(y_bottom - y_top)
+            y_offset = int(((top - int(y_top)) / col_height) * sc.wall_height)
+            off_screen = int(((int(y_bottom) - bottom) / col_height) * sc.wall_height)
+            tex_x = sidedef.x_offset + int(u / one_over_z)
+
+            if tex_height >= sc.wall_height:
+                ss = texture.subsurface((tex_x % texture.get_width(), y_offset + sidedef.y_offset, 1, sc.wall_height - (y_offset + off_screen)))
+                ss = transform.scale(ss, (1, bottom - top))
+                render_list.append(((i, top), ss))
+            else:
+                surf = Surface((1, sc.wall_height - (y_offset + off_screen))).convert_alpha()
+                rect = (tex_x % texture.get_width(), (sidedef.y_offset + y_offset), 1, texture.get_height() - (sidedef.y_offset + y_offset))
+                surf.blit(texture, (0,0), rect)
+                y = (texture.get_height() - (sidedef.y_offset + y_offset))
+                pix_left = sc.wall_height - (texture.get_height() - (sidedef.y_offset + y_offset))
+                while pix_left > texture.get_height():
+                    rect = (tex_x % texture.get_width(), 0, 1, texture.get_height())
+                    surf.blit(texture, (0,y), rect)
+                    y += texture.get_height()
+                    pix_left -= texture.get_height()
+                rect = (tex_x % texture.get_width(), 0, 1, pix_left - off_screen)
+                surf.blit(texture, (0,y), rect)
+                surf = transform.scale(surf, (1, bottom - top))
+                render_list.append(((i, top), surf))
+
+        y_top += sc.y_step_top
+        y_bottom += sc.y_step_bottom
+        u += sc.u_step
+        one_over_z += sc.one_over_z_step
+    return render_list
+
+def _seg_to_screen_coord(seg:Seg, linedef:LineDef, sidedef:SideDef, sector:Sector, pos:Vector2, angle:float) -> Optional[ScreenCoords]:
     v0 = vertexes[seg.start_vert]
     v1 = vertexes[seg.end_vert]
 
     if _is_backface(v0, seg.angle, pos):
-        if bla:
-            print('sldghslghk')
-        return render_list
+        return None
 
-    linedef = linedefs[seg.linedef]
+    linedef_len = (vertexes[linedef.end_vert] - vertexes[linedef.start_vert]).length()
+    v0 = (v0 - pos).rotate_rad(-angle)
+    v1 = (v1 - pos).rotate_rad(-angle)
 
-    if linedef.back_sidedef == -1:
-        linedef_len = (vertexes[linedef.end_vert] - vertexes[linedef.start_vert]).length()
-        v0 = (v0 - pos).rotate_rad(-angle)
-        v1 = (v1 - pos).rotate_rad(-angle)
+    c0, c1 = _classify_edge_to_view(VIEW_POS, VIEW_DIR,
+        VIEW_LEFT_FRUST_NORM, VIEW_RIGHT_FRUST_NORM, v0, v1)
+    seg_in_view = _test_edge_classification(VIEW_POS, VIEW_DIR,
+        v0, v1, c0, c1)
 
-        c0, c1 = _classify_edge_to_view(VIEW_POS, VIEW_DIR,
-            VIEW_LEFT_FRUST_NORM, VIEW_RIGHT_FRUST_NORM, v0, v1)
-        seg_in_view = _test_edge_classification(VIEW_POS, VIEW_DIR,
-            v0, v1, c0, c1)
+    if seg_in_view:
+        u_left, u_right = 0.0, linedef_len
+        if not (c0 == 7 and c1 == 7):
+            tmp_v0, tmp_v1 = v0, v1
+            v0, v1 = _clip_to_view(v0, v1, VIEW_POS, VIEW_DIR,
+                VIEW_LEFT_FRUST, VIEW_RIGHT_FRUST, c0, c1)
+            u_left = (tmp_v0 - v0).length()
+            u_right = linedef_len - (tmp_v1 - v1).length()
 
-        if seg_in_view:
+        x_scale0 = v0.y / (TAN_HALF_FOV * -v0.x)
+        x_scale1 = v1.y / (TAN_HALF_FOV * -v1.x)
+
+        x_scale0, x_scale1 = min(x_scale0, x_scale1), max(x_scale0, x_scale1)
+        first_col = int((max(-1.0, min(x_scale0, 1.0)) + 1.0) * (RES_WIDTH / 2))
+        last_col = int((max(-1.0, min(x_scale1, 1.0)) + 1.0) * (RES_WIDTH / 2))
+
+        if last_col == first_col:
+            return None
+
+        if x_scale0 > x_scale1:
+            v0, v1 = v1, v0
+
+        vfov = WALL_HEIGHT_SCALE * RES_HEIGHT
+        y_scale0 = vfov / v0.x
+        y_scale1 = vfov / v1.x
+
+        floor_h = sector.floor_height
+        ceiling_h = sector.ceiling_height
+
+        half_height = RES_HEIGHT / 2
+        h_top_start = int(half_height - y_scale0 * (ceiling_h - HEAD_POS))
+        h_bottom_start = int(half_height - y_scale0 * (floor_h - HEAD_POS))
+        h_top_end = int(half_height - y_scale1 * (ceiling_h - HEAD_POS))
+        h_bottom_end = int(half_height - y_scale1 * (floor_h - HEAD_POS))
+
+        u_left += (vertexes[linedef.start_vert] - vertexes[seg.start_vert]).length()
+        u_right -= (vertexes[linedef.end_vert] - vertexes[seg.end_vert]).length()
+
+        n_columns = last_col - first_col
+
+        y_step_top = (h_top_end - h_top_start) / n_columns
+        y_step_bottom = (h_bottom_end - h_bottom_start) / n_columns
+
+        one_over_z0 = 1 / v0.x
+        one_over_z1 = 1 / v1.x
+        one_over_z_step = (one_over_z1 - one_over_z0) / n_columns
+        u_left *= one_over_z0
+        u_right *= one_over_z1
+        u_step = (u_right - u_left) / n_columns
+
+        return ScreenCoords(
+            first_col, last_col,
+            h_top_start, h_top_end, y_step_top,
+            h_bottom_start, h_bottom_end, y_step_bottom,
+            u_left, u_right, u_step,
+            one_over_z0, one_over_z1, one_over_z_step,
+            ceiling_h - floor_h)
+    return None
+
+def _render_subsector(subsector_index:int, player:Player):
+    render_list : List[ScreenColumn] = []
+    subsector = ssectors[subsector_index]
+
+    for i in range(subsector.n_segs):
+        seg_index = subsector.start_seg + i
+        seg = segs[seg_index]
+        linedef = linedefs[seg.linedef]
+
+        if linedef.back_sidedef == -1:
             sidedef = sidedefs[linedef.front_sidedef]
-            texture = wall_textures[sidedef.middle_texture_name]
-
-            u_left, u_right = 0.0, linedef_len
-            if not (c0 == 7 and c1 == 7):
-                tmp_v0, tmp_v1 = v0, v1
-                v0, v1 = _clip_to_view(v0, v1, VIEW_POS, VIEW_DIR,
-                    VIEW_LEFT_FRUST, VIEW_RIGHT_FRUST, c0, c1)
-                u_left = (tmp_v0 - v0).length()
-                u_right = linedef_len - (tmp_v1 - v1).length()
-
-            x_scale0 = v0.y / (TAN_HALF_FOV * -v0.x)
-            x_scale1 = v1.y / (TAN_HALF_FOV * -v1.x)
-
-            x_scale0, x_scale1 = min(x_scale0, x_scale1), max(x_scale0, x_scale1)
-            first_col = int((max(-1.0, min(x_scale0, 1.0)) + 1.0) * (RES_WIDTH / 2))
-            last_col = int((max(-1.0, min(x_scale1, 1.0)) + 1.0) * (RES_WIDTH / 2))
-            n_columns = last_col - first_col
-
-            if n_columns == 0:
-                return render_list
-
-            if x_scale0 > x_scale1:
-                v0, v1 = v1, v0
-
-            vfov = WALL_HEIGHT_SCALE * RES_HEIGHT
-            y_scale0 = vfov / v0.x
-            y_scale1 = vfov / v1.x
-
             sector = sectors[sidedef.sector]
-            floor_h = sector.floor_height
-            ceiling_h = sector.ceiling_height
 
-            half_height = RES_HEIGHT / 2
-            h_top_start = int(half_height - y_scale0 * (ceiling_h - HEAD_POS))
-            h_bottom_start = int(half_height - y_scale0 * (floor_h - HEAD_POS))
-            h_top_end = int(half_height - y_scale1 * (ceiling_h - HEAD_POS))
-            h_bottom_end = int(half_height - y_scale1 * (floor_h - HEAD_POS))
+            if sc := _seg_to_screen_coord(seg, linedef, sidedef, sector, player.pos, player.angle):
+                for clipped_sc in clip_solid_wall(sc):
+                    if clipped_sc.last_col != clipped_sc.first_col:
+                        render_list += _screen_coord_to_screen_cols(clipped_sc, sidedef)
+        else:
+            # TODO: Handle window portals
+            pass
+    return render_list
 
-            y_step_top = (h_top_end - h_top_start) / n_columns
-            y_step_bottom = (h_bottom_end - h_bottom_start) / n_columns
-            y_top = h_top_start
-            y_bottom = h_bottom_start
+def _render_bsp_node(player:Player, node_index:Optional[int]=None):
+    if node_index is None:
+        node_index = len(nodes) - 1
 
-            u_left += (vertexes[linedef.start_vert] - vertexes[seg.start_vert]).length()
-            u_right -= (vertexes[linedef.end_vert] - vertexes[seg.end_vert]).length()
+    if node_index >> 15:
+        return _render_subsector(node_index ^ (1 << 15), player)
 
-            one_over_z0 = 1 / v0.x
-            one_over_z1 = 1 / v1.x
-            u_left *= one_over_z0
-            u_right *= one_over_z1
-            u_step = (u_right - u_left) / n_columns
-            one_over_z_step = (one_over_z1 - one_over_z0) / n_columns
+    node = nodes[node_index]
+    render_list : List[ScreenColumn] = []
 
-            tex_height = texture.get_height() - sidedef.y_offset
-            wall_height = ceiling_h - floor_h
-
-            for i in range(first_col, last_col):
-                if y_top < RES_HEIGHT and y_bottom >= 0 and int(y_bottom) != int(y_top):
-                    tex_x = sidedef.x_offset + int(u_left / one_over_z0)
-                    if tex_height >= wall_height:
-                        top = max(int(y_top), top_bound[i])
-                        bottom = min(int(y_bottom), bottom_bound[i])
-                        col_height = int(y_bottom - y_top)
-                        y_offset = int(((top - int(y_top)) / col_height) * wall_height)
-                        off_screen = int(((int(y_bottom) - bottom) / col_height) * wall_height)
-
-                        ss = texture.subsurface((tex_x % texture.get_width(), y_offset + sidedef.y_offset, 1, wall_height - (y_offset + off_screen)))
-                        ss = transform.scale(ss, (1, bottom - top))
-                        render_list.append(((i, top), ss))
-                    else:
-                        top = max(int(y_top), top_bound[i])
-                        bottom = min(int(y_bottom), bottom_bound[i])
-                        col_height = int(y_bottom - y_top)
-                        y_offset = int(((top - int(y_top)) / col_height) * wall_height)
-                        off_screen = int(((int(y_bottom) - bottom) / col_height) * wall_height)
-
-                        surf = Surface((1, wall_height - (y_offset + off_screen))).convert_alpha()
-                        rect = (tex_x % texture.get_width(), (sidedef.y_offset + y_offset), 1, texture.get_height() - (sidedef.y_offset + y_offset))
-                        surf.blit(texture, (0,0), rect)
-                        y = (texture.get_height() - (sidedef.y_offset + y_offset))
-                        pix_left = wall_height - (texture.get_height() - (sidedef.y_offset + y_offset))
-                        while pix_left > texture.get_height():
-                            rect = (tex_x % texture.get_width(), 0, 1, texture.get_height())
-                            surf.blit(texture, (0,y), rect)
-                            y += texture.get_height()
-                            pix_left -= texture.get_height()
-                        rect = (tex_x % texture.get_width(), 0, 1, pix_left - off_screen)
-                        surf.blit(texture, (0,y), rect)
-                        surf = transform.scale(surf, (1, bottom - top))
-                        render_list.append(((i, top), surf))
-
-                y_top += y_step_top
-                y_bottom += y_step_bottom
-                u_left += u_step
-                one_over_z0 += one_over_z_step
-
+    if _on_right_side(player.pos, node):
+        render_list += _render_bsp_node(player, node.right_child)
+        if _boundingbox_intersects_view(player.pos, player.dir, player.frust_norm_left, player.frust_norm_right, node.left_bbox):
+            render_list += _render_bsp_node(player, node.left_child)
+    else:
+        render_list += _render_bsp_node(player, node.left_child)
+        if _boundingbox_intersects_view(player.pos, player.dir, player.frust_norm_left, player.frust_norm_right, node.right_bbox):
+            render_list += _render_bsp_node(player, node.right_child)
     return render_list
 
 
-
-
-
-def temp_bla_func(seg_index):
-    seg = segs[seg_index]
-    seg_len = (vertexes[seg.end_vert] - vertexes[seg.start_vert]).length()
-    linedef = linedefs[seg.linedef]
-    sidedef = sidedefs[linedef.front_sidedef]
-    texture = wall_textures[sidedef.middle_texture_name]
-    print(seg_len, texture.get_width())
-
-
-
-
-
-
-
-
-
+def render_player_view(player:Player):
+    clear_clip_range()
+    return _render_bsp_node(player)
 
 
 

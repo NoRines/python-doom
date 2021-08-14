@@ -1,39 +1,15 @@
 import pygame
-from pygame import Vector2, display, event, time, key, transform
+from pygame import display, event, time, key, transform
 from pygame.constants import KEYDOWN, K_ESCAPE, K_SPACE, QUIT
-from pygame.version import ver
 
 from wad.reader import read_things, read_wad_info_table
 
-from bsp.bsp_map import init_bsp_map, test_render_seg, temp_bla_func
+from bsp.bsp_map import init_bsp_map, render_player_view
 
 import math
 
-class Player:
-    def __init__(self, pos : Vector2, angle : float, fov : float, head_height : int) -> None:
-        self.pos = pos
-        self.angle = angle
-        self.fov = fov
-        self.head_height = head_height
-        self._update_dir()
+from entities.player import Player
 
-    def _update_dir(self):
-        self.dir = Vector2(math.cos(self.angle), math.sin(self.angle))
-        self.frust_left = self.dir.rotate_rad(-self.fov/2)
-        self.frust_right = self.dir.rotate_rad(self.fov/2)
-        self.frust_norm_left = Vector2(-self.frust_left.y, self.frust_left.x)
-        self.frust_norm_right = Vector2(self.frust_right.y, -self.frust_right.x)
-
-    def update(self, keys):
-        if keys[pygame.K_LEFT]:
-            self.angle += 0.025
-        if keys[pygame.K_RIGHT]:
-            self.angle -= 0.025
-        self._update_dir()
-        if keys[pygame.K_UP]:
-            self.pos += self.dir * 2.5
-        if keys[pygame.K_DOWN]:
-            self.pos -= self.dir * 2.5
 
 WAD_PATH = 'wads/DOOM.WAD'
 WINDOW_DIMS = RES_WIDTH, HEIGHT_RES = 640, 480
@@ -69,16 +45,8 @@ def main():
         player.update(key.get_pressed())
     
         screen.fill('white', (0,0,640,400))
-        #screen.blit(wall_textures['STARTAN3'], (0,0))
-        if not one_seg_mode:
-            render_list = []
-            for i in range(747):
-                render_list += test_render_seg(i, player.pos, player.angle)
-        else:
-            render_list = test_render_seg(seg_index, player.pos, player.angle, True)
-            #temp_bla_func(seg_index)
+        render_list = render_player_view(player)
         for pos, ss in render_list:
-            #screen.blit(ss, pos)
             screen.blit(transform.scale2x(ss), (pos[0]*2, pos[1]*2))
         display.update()
         clock.tick(60)
