@@ -1,7 +1,6 @@
 import copy
-from typing import NamedTuple, List, Optional
+from typing import NamedTuple, List
 from dataclasses import dataclass
-from pygame import Vector2
 
 from utils.defs import RES_WIDTH
 
@@ -63,6 +62,34 @@ def _update_screen_coords(sc:ScreenCoords, new_first_col:int, new_last_col:int) 
         u_left, u_right, sc.u_step,
         one_over_z0, one_over_z1, sc.one_over_z_step,
         sc.wall_height)
+
+
+def clip_window_wall(sc:ScreenCoords) -> List[ScreenCoords]:
+    first, last = sc.first_col, sc.last_col
+    res : List[ScreenCoords] = []
+
+    i = 0
+    while first-1 > solid_segs[i].last:
+        i += 1
+
+    if first < solid_segs[i].first:
+        if last < solid_segs[i].first-1:
+            res.append(_update_screen_coords(sc, first, last))
+            return res
+        res.append(_update_screen_coords(sc, first, solid_segs[i].first))
+
+    if last <= solid_segs[i].last:
+        return res
+
+    while last > solid_segs[i+1].first+1:
+        res.append(_update_screen_coords(sc, solid_segs[i].last, solid_segs[i+1].first))
+        i += 1
+        if last <= solid_segs[i].last:
+            return res
+
+    res.append(_update_screen_coords(sc, solid_segs[i].last, last))
+    return res
+
 
 def clip_solid_wall(sc:ScreenCoords) -> List[ScreenCoords]:
     global n_solid_segs, solid_segs

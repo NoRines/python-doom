@@ -8,6 +8,8 @@ class Player:
         self.angle = angle
         self.fov = fov
         self.head_height = head_height
+        self.eye_height = head_height - 15
+        self.foot_pos = 0
         self._update_dir()
 
     def _update_dir(self):
@@ -16,6 +18,12 @@ class Player:
         self.frust_right = self.dir.rotate_rad(self.fov/2)
         self.frust_norm_left = Vector2(-self.frust_left.y, self.frust_left.x)
         self.frust_norm_right = Vector2(self.frust_right.y, -self.frust_right.x)
+    
+    def update_foot_pos(self, foot_pos):
+        self.foot_pos = foot_pos
+    
+    def get_eye_pos(self):
+        return self.foot_pos + self.eye_height
 
     def update(self, keys):
         if keys[pygame.K_LEFT]:
